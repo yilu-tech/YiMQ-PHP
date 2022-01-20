@@ -1,0 +1,23 @@
+syntax = "proto3";
+option go_package = "./;services";
+option php_namespace = "YiluTech\\YiMQ\\Grpc\\Services";
+option php_metadata_namespace = "YiluTech\\YiMQ\\Grpc\\GPBMetadata";
+package services;
+
+
+service Server {
+  rpc TccTry (TryRequest) returns (TryReply) {}
+}
+message TryRequest  {
+  string id = 1;
+  string type = 2;
+  string trans_id = 3;
+  string consumer = 4;
+  string processor = 5;
+  bytes data = 6;
+}
+
+message TryReply{
+  string error = 1;
+  bytes result = 2;
+}
