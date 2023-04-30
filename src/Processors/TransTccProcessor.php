@@ -29,18 +29,21 @@ abstract class TransTccProcessor extends Processor
     protected function runTry(){
         $this->createProcess();
         $this->runValidate();
+        $this->childTransactionBegin();
+        $this->client->localBegin();
 
         try {
-            $this->childTransactionBegin();
-            $this->client->localBegin();
 
             $this->loadAndLockProcessRecord();
-            $result = $this->try();
+            $data = $this->try();
             $this->updateProcessRecordAction(MessageAction::PREPARED);
 
             $this->childTransactionPrepare();
             $this->client->localCommit();
-            return $result;
+            return [
+                "message"=> "prepare_succeed",
+                "data" => $data
+            ];
         }catch (\Exception $e){
             $this->client->localRollback();
             $this->childTransactionRollback();
@@ -55,11 +58,12 @@ abstract class TransTccProcessor extends Processor
             $this->loadAndLockProcessRecord();
 
             if($this->action == MessageAction::SUBMITTED){
-                $this->client->rollback();
-                return ['message'=>"retry_succeed"];
+                $this->client->localRollback();
+                return ['message'=>"compensate_submit_succeed"];
             }
+
             if($this->action != MessageAction::PREPARED){
-                $this->client->rollback();
+                $this->client->localRollback();
                 throw new SystemException("status is {$this->action}");
             }
             $this->confirm();
@@ -69,7 +73,7 @@ abstract class TransTccProcessor extends Processor
             $this->childTransactionRestoreAndCommit();
             $this->client->localCommit();
 
-            return ['message'=>"succeed"];
+            return ['message'=>"submit_succeed"];
         }catch (\Exception $e){
             $this->client->localRollback();
 
@@ -90,13 +94,13 @@ abstract class TransTccProcessor extends Processor
 
             if($this->action == MessageAction::CANCELED){
                 $this->client->localRollback();
-                return ['message'=>"retry_succeed"];
+                return ['message'=>"compensate_cancel_succeed"];
             }
 
             if($this->action == MessageAction::PREPARING){
                 $this->updateProcessRecordAction(MessageAction::CANCELED);
                 $this->client->localCommit();
-                return ['message'=>"compensate_canceled"];
+                return ['message'=>"preparing_cancel_succeed"];
             }
 
             if($this->action != MessageAction::PREPARED){
@@ -110,7 +114,7 @@ abstract class TransTccProcessor extends Processor
             $this->childTransactionRestoreAndRollback();
             $this->client->localCommit();
 
-            return ['message'=>"succeed"];
+            return ['message'=>"cancel_succeed"];
         }catch (\Exception $e){
             $this->client->localRollback();
 

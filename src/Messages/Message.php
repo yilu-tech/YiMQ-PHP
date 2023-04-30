@@ -16,4 +16,8 @@ class Message
     public function client():Client{
         return $this->client;
     }
+
+    public function getId():string{
+        return $this->id;
+    }
 }

@@ -17,12 +17,13 @@ class TransTest extends TestCase
     {
         parent::setUp();
         $this->client = new PdoClient('test',null,[
-            'message_table'=>'yimq_messages',
-            'process_table'=>'yimq_processes',
+            "broker"=>"main",
+            'table_prefix'=>'yimq',
             'address'=> '127.0.0.1:8443',
             'dsn'=> 'mysql:host=127.0.0.1;dbname=yimq',
             'username'=>'root',
-            'password'=>'123456'
+            'password'=>'123456',
+            'secret'=>'secret'
         ]);
         $this->client->delete('delete from users');
         $this->client->testClear();
@@ -30,9 +31,7 @@ class TransTest extends TestCase
 
 
     function testBegin(){
-
-
-
+        $this->client->mock()->transaction("test");
         $trans = $this->client->transaction("test");
         $trans->begin();
         //todo 检查delay
@@ -42,55 +41,57 @@ class TransTest extends TestCase
     function testCommit(){
 
 
-
+        $this->client->mock()->transaction("test");
         $trans = $this->client->transaction("test");
         $trans->begin();
         $trans->commit();
 
-        $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::SUBMITTING]);
+        $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::SUBMITTED]);
     }
 
     function testRollbck(){
 
 
 
-
+        $this->client->mock()->transaction("test");
         $trans = $this->client->transaction("test");
         $trans->begin();
         $trans->rollback();
 
-        $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::CANCELLING,'status'=>MessageStatus::WAITING]);
+        $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::CANCELED,'status'=>MessageStatus::WAITING]);
     }
 
     function testCallbackCommit(){
 
-
+        $this->client->mock()->transaction("test");
         $result = $this->client->transaction("test",function (){
             return "success";
         })->begin();
 
         $this->assertEquals($result,"success");
 
-        $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::SUBMITTING]);
+        $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::SUBMITTED]);
     }
 
     function testCallbackRollback(){
 
         $this->expectExceptionMessage("failed");
-
+        $this->client->mock()->transaction("test");
         try {
             $this->client->transaction("test",function (){
                 throw new \Exception("failed");
             })->begin();
 
         }catch (\Exception $e){
-            $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::CANCELLING,'status'=>MessageStatus::WAITING]);
+            $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::CANCELED,'status'=>MessageStatus::WAITING]);
             throw $e;
         }
     }
 
     function testEc(){
 
+        $this->client->mock()->transaction("test");
+        $this->client->mock()->prepare("test");
 
         $result = $this->client->transaction("test",function (TransMessage $trans){
             $trans->ec("user@user.create")->data("test")->join();
@@ -99,49 +100,51 @@ class TransTest extends TestCase
             return "success";
         })->begin();
 
-        $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::SUBMITTING]);
-        $this->assertDatabaseCount($this->client->messageTable(),4);
+        $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::SUBMITTED]);
+        $this->assertDatabaseCount($this->client->messageTable(),1);
     }
 
     function testTcc(){
 
-
+        $this->client->mock()->transaction("test");
+        $this->client->mock()->prepare("test");
         $this->client->mock()->tcc("user@user.create","success");
 
-        $result = $this->client->transaction("test",function (TransMessage $trans){
-            return $trans->tcc("user@user.create")->data(["username"=>"test"])->try();
+        $this->client->transaction("test",function (TransMessage $trans){
+            $tcc=  $trans->tcc("user@user.create")->data(["username"=>"test"])->try();
+            $this->assertEquals($tcc->getPrepareData(),'success');
         })->begin();
 
-        $this->assertEquals($result,'success');
-
-        $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::SUBMITTING]);
+        $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::SUBMITTED]);
     }
 
     function testXa(){
 
-
+        $this->client->mock()->transaction("test");
+        $this->client->mock()->prepare("test");
         $this->client->mock()->xa("user@user.create","success");
 
-        $result = $this->client->transaction("test",function (TransMessage $trans){
-            return $trans->xa("user@user.create")->data(["username"=>"test"])->prepare();
+         $this->client->transaction("test",function (TransMessage $trans){
+            $xa =  $trans->xa("user@user.create")->data(["username"=>"test"])->prepare();
+             $this->assertEquals($xa->getPrepareData(),'success');
         })->begin();
 
-        $this->assertEquals($result,'success');
 
-        $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::SUBMITTING]);
+        $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::SUBMITTED]);
     }
 
     function testSaga(){
 
+        $this->client->mock()->transaction("test");
+        $this->client->mock()->prepare("test");
         $this->client->mock()->saga("user@user.create","saga");
 
-        $result = $this->client->transaction("test",function (TransMessage $trans){
-            return $trans->saga("user@user.create")->data(["username"=>"test"])->try();
+        $this->client->transaction("test",function (TransMessage $trans){
+            $saga =  $trans->saga("user@user.create")->data(["username"=>"test"])->try();
+            $this->assertEquals($saga->getPrepareData(),'saga');
         })->begin();
 
-        $this->assertEquals($result,'saga');
-
-        $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::SUBMITTING]);
+        $this->assertDatabaseHas($this->client->messageTable(),['action'=>MessageAction::SUBMITTED]);
     }
 
 

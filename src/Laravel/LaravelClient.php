@@ -1,6 +1,7 @@
 <?php
 namespace YiluTech\YiMQ\Laravel;
 
+use Illuminate\Support\Facades\Log;
 use YiluTech\YiMQ\Clients\PdoClient;
 use Illuminate\Support\Facades\DB;
 
@@ -50,5 +51,15 @@ class LaravelClient extends PdoClient
     {
         $conn = $this->getDbConnection();
         $conn->rollBack();
+    }
+
+    public function logInfo(string $message, array $context = [])
+    {
+        Log::info($message,$context);
+    }
+
+    public function logError(string $message, array $context = [])
+    {
+        Log::error($message,$context);
     }
 }

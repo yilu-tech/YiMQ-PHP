@@ -1,6 +1,7 @@
 <?php
 namespace YiluTech\YiMQ\Processors;
 
+use Illuminate\Support\Facades\Log;
 use YiluTech\YiMQ\Clients\Client;
 use YiluTech\YiMQ\Constants\MessageAction;
 use YiluTech\YiMQ\Exceptions\SystemException;
@@ -32,10 +33,12 @@ abstract class Processor
             throw new SystemException("{$this->processor} processor does not support process {$context['type']}.");
         }
         $this->id = $context['id'];
-        $this->trans_id = $context['relation_id'];
+        $this->trans_id = $context['trans_id'];
         $this->producer = $context['producer'];
         $this->processor = $context['processor'];
-//        $this->data = $context['data']; //TODO
+
+        Log::info("--->",$context);
+        $this->data = isset($context['data'])? $context['data'] : ""; //TODO
 
         if(!empty($this->trans_topic)){
             $this->child_trans_id = Helpers::ksuid();
@@ -85,6 +88,7 @@ abstract class Processor
     public function childTransactionPrepare(){
         if(isset($this->trans_topic)){
             $this->client->prepare();
+            $this->client->end();
         }
     }
 

@@ -24,11 +24,11 @@ abstract class TransEcProcessor extends Processor
         }
 
         $this->runValidate();
-
+        $this->childTransactionBegin();
+        $this->client->localBegin();
         try {
 
-            $this->childTransactionBegin();
-            $this->client->localBegin();
+
 
             $this->loadAndLockProcessRecord();
 

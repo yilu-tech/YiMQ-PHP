@@ -4,10 +4,9 @@
 namespace YiluTech\YiMQ\Clients;
 
 
+use Illuminate\Support\Facades\Log;
 use PDO;
 use YiluTech\YiMQ\Exceptions\SystemException;
-use YiluTech\YiMQ\Messages\Trans\TransChildMessage;
-use YiluTech\YiMQ\Messages\TransMessage;
 
 class PdoClient extends Client
 {
@@ -29,8 +28,8 @@ class PdoClient extends Client
             $this->pdo = $pdo;
         }
 
-        $this->messageTable = $options['message_table'];
-        $this->processTable = $options['process_table'];
+        $this->messageTable = $options['table_prefix'].'_messages';
+        $this->processTable = $options['table_prefix'].'_processes';
 
         $this->driverName = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
         $this->serverVersion = $this->pdo->getAttribute(PDO::ATTR_SERVER_VERSION);
@@ -92,22 +91,6 @@ class PdoClient extends Client
         $this->update($sql,array_values($data));
     }
 
-
-    public function prepareChildren(array $children)
-    {
-        $data = [];
-        $sql = "INSERT INTO {$this->messageTable} (id,relation_id,type,topic,action,status,delay,consumer,processor,total,attempts,created_at,results) VALUES";
-
-        /* @var $child TransChildMessage */
-        foreach ($children as $key=> $child){
-            $sql .= "(?,?,?,?,?,?,?,?,?,?,?,?,?)";
-            if($key < count($children)-1){
-                $sql .= ",";
-            }
-           $data = array_merge(array_values($data),$child->getPrepareData());
-        }
-        $result = $this->insert($sql,array_values($data));
-    }
 
     public function localBegin()
     {
@@ -171,4 +154,37 @@ class PdoClient extends Client
         $this->delete("delete from $this->processTable");
     }
 
+    public function transCheck($data):array{
+        $sql = "select * from {$this->messageTable} where id = :id";
+
+        if ($this->driverName == 'mysql' && version_compare($this->serverVersion,'8.0.1', '>=')||
+            ($this->driverName === 'pgsql' && version_compare($this->serverVersion, '9.5', '>='))){
+
+            $sql = $sql." for update nowait";
+        }else{
+            $sql = $sql." for update";
+        }
+        $trans = $this->find($sql,['id'=>$data["message_id"]]);
+
+        if (!$trans){
+            return [
+                "error"=>"TRANS_NOT_EXIST"
+            ];
+        }
+        return [
+            "data" => [
+                "action"=>$trans["action"]
+            ]
+        ];
+    }
+
+    public function logInfo(string $message, array $context = [])
+    {
+
+    }
+
+    public function logError(string $message, array $context = [])
+    {
+
+    }
 }

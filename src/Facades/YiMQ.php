@@ -23,6 +23,11 @@ class YiMQ
         return $defaultClient->transaction($topic,$callback);
     }
 
+    public static function prepare(){
+        $defaultClient = self::$clientManager->client();
+        $defaultClient->prepare();
+    }
+
     public static function commit(){
         $defaultClient = self::$clientManager->client();
         $defaultClient->commit();

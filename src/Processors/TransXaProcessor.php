@@ -34,6 +34,4 @@ abstract class TransXaProcessor extends Processor
 
     }
     abstract function prepare();
-    abstract function commit();
-    abstract function rollback();
 }

@@ -2,25 +2,26 @@
 
 use YiluTech\YiMQ\Tests\Processors\UserCreateEcProcessor;
 use YiluTech\YiMQ\Tests\Processors\UserCreateTransEcProcessor;
-
+use YiluTech\YiMQ\Tests\Processors\UserCreateTransTccProcessor;
 return [
-    "default" => "yimq",
-
-    "connections"=>[
-        "yimq"=>[
-            'name' => 'user',
+    "default" => "user",
+    'route' => [
+        'prefix' => 'yimq',//url前缀
+        'name' =>'internal@test.yimq',//路由名称
+    ],
+    "actors"=>[
+        "user"=>[
+            'broker' => 'main',
+            'secret' => "asdfasdfasdfasdf",
             'db_connection' => 'mysql',
-            'address' => 'localhost',
-            'route' => [
-                'path' => 'yimq',//url前缀
-                'name' =>'internal@test.yimq',//路由名称
-            ],
+            'address' => 'localhost:8443',
             /**
              * 消息参与处理器
              */
             'processors'=>[
-                'UserCreate'=> UserCreateEcProcessor::class,
-                'UserTransCreate'=> UserCreateTransEcProcessor::class
+                'UserCreateEc'=> UserCreateEcProcessor::class,
+                'UserCreateTransEc'=> UserCreateTransEcProcessor::class,
+                'UserCreateTcc'=> UserCreateTransTccProcessor::class,
             ],
             /**
              * 消息事件监听器
@@ -33,10 +34,7 @@ return [
             'broadcast_listeners'=>[
                 \Tests\Services\UserUpdateListenerProcessor::class => 'user@user.ec.update',
             ],
-            'tables'=>[
-                "message"=> "yimq_messages",
-                "process" => 'yimq_processes'
-            ]
+            'table_prefix' => 'yimq'
         ]
     ]
 

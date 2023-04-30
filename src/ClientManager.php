@@ -11,7 +11,7 @@ use YiluTech\YiMQ\Exceptions\SystemException;
 class ClientManager
 {
 
-    protected string $default = 'yimq';
+    protected string $default;
     protected array $clients = [];
 
     public function __construct()
@@ -22,7 +22,6 @@ class ClientManager
 
     public function client($name = null):Client
     {
-
         $name = $name ?: $this->default;
         if (! isset($this->clients[$name])) {
             throw new SystemException("yimq $name client not exists");
@@ -39,6 +38,7 @@ class ClientManager
     public function setDefault($clientName){
         $this->default = $clientName;
     }
+
 
 //    public function __call($method, $parameters)
 //    {

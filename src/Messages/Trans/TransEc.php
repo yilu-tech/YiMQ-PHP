@@ -5,6 +5,9 @@ use Tuupola\Ksuid;
 use YiluTech\YiMQ\Constants\MessageAction;
 use YiluTech\YiMQ\Constants\MessageStatus;
 use YiluTech\YiMQ\Constants\MessageType;
+use YiluTech\YiMQ\Grpc\Server\ChildMessage;
+use YiluTech\YiMQ\Grpc\Server\MessageInfo;
+use YiluTech\YiMQ\Grpc\Server\MessageOptions;
 use YiluTech\YiMQ\Helpers;
 use YiluTech\YiMQ\Messages\TransMessage;
 
@@ -16,7 +19,7 @@ class TransEc extends TransChildMessage
         $this->trans->addPreparingChild($this);
     }
 
-    public function getPrepareData()
+    public function getPrepareDataOld()
     {
         $ksuid = new Ksuid();
 
@@ -36,5 +39,18 @@ class TransEc extends TransChildMessage
             "created_at" => Helpers::formartTime($now),
             "results"=> '[]'
         ];
+    }
+
+    public function getPrepareData():ChildMessage
+    {
+        $childMessage = new ChildMessage();
+        $childMessage->setConsumer($this->consumer);
+        $childMessage->setType($this->type);
+        $childMessage->setProcessor($this->processor);
+        if(isset($this->data)){
+            $childMessage->setData(json_encode($this->data));
+        }
+
+        return $childMessage;
     }
 }

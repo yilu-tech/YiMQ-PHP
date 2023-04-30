@@ -9,6 +9,7 @@ use YiluTech\YiMQ\Messages\TransMessage;
 abstract class TransChildMessage extends Message
 {
     protected TransMessage $trans;
+    protected string $type;
     protected string $consumer;
     protected string $processor;
     protected string|array $data;
@@ -29,5 +30,16 @@ abstract class TransChildMessage extends Message
         }
     }
     public function getPrepareData(){
+    }
+    public function getConsumer(): string
+    {
+        return $this->consumer;
+    }
+    public function getProcessor(): string
+    {
+        return $this->processor;
+    }
+    public function getType():string{
+        return $this->type;
     }
 }

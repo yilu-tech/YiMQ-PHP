@@ -4,12 +4,12 @@
 namespace YiluTech\YiMQ\Tests\Processors;
 
 
-use Illuminate\Support\Facades\Log;
 use YiluTech\YiMQ\Facades\YiMQ;
 use YiluTech\YiMQ\Processors\TransTccProcessor;
 
-class UserCreateTransTccProcessor extends TransTccProcessor
+class UserCreateChildTransTccProcessor extends TransTccProcessor
 {
+    protected string $trans_topic = 'trans_test';
 
     protected function validate($validator)
     {
@@ -18,9 +18,12 @@ class UserCreateTransTccProcessor extends TransTccProcessor
 
     function try()
     {
-//        $username = $this->data()['username'];
-        Log::info("username",$this->data());
-        return ["username"=>"jack-rename"];
+        $username = $this->data()['username'];
+        if($username == 'error_test'){
+            throw new \Exception($username);
+        }
+        $this->client->ec("user@create")->data([])->join();
+        return 'success';
     }
 
     function confirm()

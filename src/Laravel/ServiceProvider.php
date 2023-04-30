@@ -19,11 +19,20 @@ class ServiceProvider extends BaseServiceProvider
     }
 
     public function boot(Application $app, ClientManager $clientManager){
+        $clientManager->setDefault($app['config']['yimq.default']);
         $this->initClients($app,$clientManager);
+
+        $routeConfig = $app['config']['yimq.route'];
+
+        Route::name($routeConfig['name'])->prefix($routeConfig['prefix'])->group(function (){
+            Route::post("/process", [Controller::class,'process']);
+            Route::post("/trans_check",[Controller::class,"transMessageCheck"]);
+            Route::post("/clear",[Controller::class,"clear"]);
+        });
     }
 
     private function initClients($app,$clientManager){
-        $connOptions = $app['config']['yimq.connections'];
+        $connOptions = $app['config']['yimq.actors'];
         foreach ($connOptions as $key => $option){
             $driver = $app['config']['database.connections'][$option["db_connection"]]['driver'];
             if($driver == 'mysql'){
@@ -36,16 +45,10 @@ class ServiceProvider extends BaseServiceProvider
     }
 
     private function initMysqlClient($key,$option){
-        $client = new LaravelClient($key,$option['db_connection'],[
-            'address'=>$option['address'],
-            'message_table'=>$option['tables']['message'],
-            'process_table'=>$option['tables']['process']
-        ]);
+        $option['actor'] = $key;
+        $client = new LaravelClient($key,$option['db_connection'],$option);
         $client->processorManager()->init($option['processors']);
 
-        Route::name($option['route']['name'])->group(function () use ($option){
-            Route::post($option['route']['path'], [Controller::class,'process']);
-        });
         return $client;
     }
 

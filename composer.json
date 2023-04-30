@@ -12,11 +12,12 @@
   "require": {
     "google/protobuf": "^3.19",
     "grpc/grpc": "^1.42",
+    "laravel/octane": "^1.2",
+    "spiral/roadrunner": "^2.0",
     "tuupola/ksuid": "^2.1"
   },
   "require-dev": {
     "laravel/framework": "^8.79",
-    "laravel/octane": "^1.2",
     "orchestra/testbench": "^6.23",
     "phpunit/phpunit": "^9.5"
   },

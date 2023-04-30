@@ -1,11 +1,14 @@
 <?php
 namespace YiluTech\YiMQ\Clients;
 
+use YiluTech\YiMQ\Constants\MessageAction;
 use YiluTech\YiMQ\Exceptions\SystemException;
-use YiluTech\YiMQ\Grpc\Services\TryReply;
-use YiluTech\YiMQ\Grpc\Services\TryRequest;
-use YiluTech\YiMQ\Grpc\Services\YiMQClient;
+use YiluTech\YiMQ\Grpc\Server\ActorInfo;
+use YiluTech\YiMQ\Grpc\Server\ClientInfo;
+use YiluTech\YiMQ\Grpc\Server\ServerClient;
+use YiluTech\YiMQ\Grpc\Server\TransPrepareRequest;
 use YiluTech\YiMQ\Laravel\LaravelClient;
+use YiluTech\YiMQ\Messages\Trans\TransChildMessage;
 use YiluTech\YiMQ\Messages\Trans\TransEc;
 use YiluTech\YiMQ\Messages\Trans\TransSaga;
 use YiluTech\YiMQ\Messages\Trans\TransTcc;
@@ -17,10 +20,12 @@ use YiluTech\YiMQ\ClientProcessorManager;
 abstract class Client
 {
     protected string $name;
+    protected string $broker;
+    protected string $secret;
     protected string $address;
     protected TransMessage $transaction;
-    protected YiMQClient $grpcClient;
-    protected Mocker $mocker;
+    public ServerClient $grpcClient;
+    public Mocker $mocker;
     protected ClientProcessorManager $processorManager;
     /**
      * @param $name string
@@ -29,10 +34,16 @@ abstract class Client
     public function __construct(string $name, array $options)
     {
         $this->name = $name;
+        $this->broker = $options["broker"];
+        $this->secret = $options["secret"];
+
+
         $this->address = $options['address'];
         $this->processorManager = new ClientProcessorManager($this);
     }
-
+    public abstract function testClear();
+    public abstract function logInfo(string $message, array $context = []);
+    public abstract function logError(string $message, array $context = []);
 
     public function transaction(string $topic=null,callable $callback=null){
         if(isset($this->transaction)){
@@ -68,9 +79,10 @@ abstract class Client
     public function prepare(){
         $this->ifNotHasTransactionThrow();
         $this->transaction->prepare();
+    }
+    public function end(){
         unset($this->transaction);
     }
-
 
     public function commit($localCommit=true){
         $this->ifNotHasTransactionThrow();
@@ -124,31 +136,45 @@ abstract class Client
 
     public abstract function transCommit($data);
 
-    public abstract function prepareChildren(array $children);
+    public abstract function transCheck($data);
 
-    public function prepareToServer(TryRequest $tryRequest):array{
-        if(isset($this->mocker) && $result = $this->mocker->match($tryRequest)){
-            return $result;
-        }
 
-        $this->initGrpc();
 
-        /* @var $tryReply TryReply */
-        list($tryReply, $status) = $this->grpcClient->TccTry($tryRequest)->wait();
-        if($status->code != 0){
-            throw new SystemException("code: {$status->code}, client try {$status->details}");
-        }
-        $result = json_decode($tryReply->getResult(),true);
-        $result = is_null($result) ?  $tryReply->getResult() : $result;
-
-        return [$result,$tryReply->getError()];
-    }
+//    public function transChildPrepare(TryRequest $tryRequest):array{
+//        if(isset($this->mocker) && $result = $this->mocker->match($tryRequest)){
+//            return $result;
+//        }
+//
+//        $this->initGrpc();
+//
+//        /* @var $tryReply TryReply */
+//        list($tryReply, $status) = $this->grpcClient->TccTry($tryRequest)->wait();
+//        if($status->code != 0){
+//            throw new SystemException("code: {$status->code}, client try {$status->details}");
+//        }
+//        $result = json_decode($tryReply->getResult(),true);
+//        $result = is_null($result) ?  $tryReply->getResult() : $result;
+//
+//        return [$result,$tryReply->getError()];
+//    }
     public function initGrpc(){
         if(isset($this->grpcClient)){
             return;
         }
-        $this->grpcClient = new YiMQClient($this->address,[
-            'credentials' => \Grpc\ChannelCredentials::createInsecure()
+        $this->grpcClient = new ServerClient($this->address,[
+            'credentials' => \Grpc\ChannelCredentials::createInsecure(),
+            'update_metadata' => function($metaData) {
+                $timestamp = strval(time());
+                $sign = $this->getSign($timestamp);
+
+                $metaData['broker'] = [$this->broker];
+                $metaData['actor'] = [$this->name];
+
+
+                $metaData['sign'] = [$sign];
+                $metaData['timestamp'] = [$timestamp];
+                return $metaData;
+            }
         ]);
     }
     public function mock():Mocker{
@@ -168,6 +194,7 @@ abstract class Client
         return $this->processorManager;
     }
 
+
     public abstract function createProcess($data);
 
     public abstract function setProcessAction($id,$action);
@@ -179,5 +206,16 @@ abstract class Client
     }
     public function getLaravelClient():LaravelClient{
         return $this;
+    }
+
+    public function getSign(string $timestamp):string{
+        return md5("$this->broker-$this->name-$this->secret-$timestamp");
+    }
+    public function verify(string $timestamp,string $sign){
+        $verifySign = md5("$this->broker-$this->name-$this->secret-$timestamp");
+
+        if($sign != $verifySign){
+            throw new SystemException("Unauthenticated");
+        }
     }
 }

@@ -1,15 +1,12 @@
 <?php
 
 return [
-    "default" => "yimq",
 
-    "connections"=>[
-        "yimq"=>[
+    "clients"=>[
+        "default"=>[
             'name' => 'user',
-            "client"=>[
-                'uri' => env('YIMQ_DEFALUT_SERVICE_URI'),
-                'headers'=>[]
-            ],
+            'broker'=>'main',
+            "address"=>"localhost",
             /**
              * 消息参与处理器
              */
@@ -27,10 +24,7 @@ return [
             'broadcast_listeners'=>[
                 \Tests\Services\UserUpdateListenerProcessor::class => 'user@user.ec.update',
             ],
-            'tables'=>[
-                "message"=> "yimq_messages",
-                "processes" => 'yimq_processes'
-            ]
+            'table'=> "yimq_messages"
         ]
     ]
 

@@ -1,23 +1,81 @@
 syntax = "proto3";
-option go_package = "./;services";
-option php_namespace = "YiluTech\\YiMQ\\Grpc\\Services";
+option go_package = "./;server";
+option php_namespace = "YiluTech\\YiMQ\\Grpc\\Server";
 option php_metadata_namespace = "YiluTech\\YiMQ\\Grpc\\GPBMetadata";
-package services;
+package server;
 
 
 service Server {
-  rpc TccTry (TryRequest) returns (TryReply) {}
+  rpc TransBegin(TransBeginRequest) returns (TransActionReply){}
+  rpc TransPrepare (TransPrepareRequest) returns (TransActionReply) {}
+  rpc TransSubmit (TransActionRequest) returns (TransActionReply) {}
+  rpc TransCancel (TransActionRequest) returns (TransActionReply) {}
+  rpc TransChildPrepare(TransChildPrepareRequest) returns (TransChildPrepareReply) {}
+
+
+  rpc GeneralDispatch(PrepareRequest) returns (PrepareReply) {}
+  rpc BroadcastDispatch(PrepareRequest) returns (PrepareReply) {}
 }
-message TryRequest  {
+
+
+
+message TransBeginRequest  {
+  string topic = 1;
+  uint32 delay = 2;
+}
+
+message TransActionRequest  {
+
+  string message_id = 2;
+}
+
+message TransActionReply {
+  string id = 3;
+}
+
+
+message ChildMessage{
+  string type = 1;
+  string consumer =2 ;
+  string topic = 3;
+  string processor = 4;
+  uint32 delay = 5;
+  bytes data = 6;
+}
+
+message TransPrepareRequest  {
+
+  string message_id = 1;
+  repeated ChildMessage messages = 2;
+}
+
+
+
+message TransChildPrepareRequest  {
+  string message_id = 1;
+  ChildMessage child = 2;
+}
+
+message TransChildPrepareReply{
+  string message = 1;
+  string error = 2;
+  bytes data = 3;
+}
+
+
+message PrepareRequest  {
   string id = 1;
   string type = 2;
-  string trans_id = 3;
+  string relation_id = 3;
   string consumer = 4;
   string processor = 5;
   bytes data = 6;
 }
 
-message TryReply{
-  string error = 1;
-  bytes result = 2;
+message PrepareReply{
+  string message = 1;
+  string error = 2;
+  bytes data = 3;
 }
+
+

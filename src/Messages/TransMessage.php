@@ -5,6 +5,13 @@ use YiluTech\YiMQ\Clients\Client;
 use YiluTech\YiMQ\Constants\MessageAction;
 use YiluTech\YiMQ\Constants\MessageStatus;
 use YiluTech\YiMQ\Constants\MessageType;
+use YiluTech\YiMQ\Exceptions\SystemException;
+use YiluTech\YiMQ\Grpc\Server\ClientInfo;
+use YiluTech\YiMQ\Grpc\Server\MessageInfo;
+use YiluTech\YiMQ\Grpc\Server\MessageOptions;
+use YiluTech\YiMQ\Grpc\Server\TransActionRequest;
+use YiluTech\YiMQ\Grpc\Server\TransBeginRequest;
+use YiluTech\YiMQ\Grpc\Server\TransPrepareRequest;
 use YiluTech\YiMQ\Helpers;
 use YiluTech\YiMQ\Messages\Trans\TransChildMessage;
 use YiluTech\YiMQ\Messages\Trans\TransEc;
@@ -20,13 +27,16 @@ class TransMessage extends Message
 
     protected string $relation_id;
     public function __construct(
-        protected Client $client,
+        public Client $client,
         protected string $topic,
         callable $callback = null
     )
     {
         $this->callback = $callback;
         $this->action = MessageAction::PREPARING;
+    }
+    public function getTopic():string{
+        return $this->topic;
     }
 
     public function restore($data){
@@ -47,7 +57,9 @@ class TransMessage extends Message
             $this->client->localBegin();
         }
 
-        if(is_null($this->callback)){return;};
+        if(is_null($this->callback)){
+            return $this;
+        };
 
         try {
             $result = call_user_func($this->callback,$this);
@@ -60,7 +72,9 @@ class TransMessage extends Message
     }
 
     private function beginTrans(){
-        $this->id = Helpers::ksuid();
+
+        $this->id  = $this->beginServerTrans();
+
         $now = Helpers::getNow();
 
         $data["id"] = $this->id;
@@ -78,21 +92,62 @@ class TransMessage extends Message
         $this->client->transBeginTransaction($data);
     }
 
-    /**
-     * tcc专用
-     */
-    public function prepare($commitPrepare = false){
-        if (count($this->preparingChildren) > 0){
-            $this->client->prepareChildren($this->preparingChildren);
+    private function beginServerTrans(){
+
+        if(isset($this->client->mocker) &&  $id = $this->client->mocker->matchTransaction($this->topic,MessageAction::PREPARING)){
+            return $id;
         }
-        if(!$commitPrepare){
+        $this->client->initGrpc();
+
+        $request = new TransBeginRequest();
+        $request->setTopic($this->topic);
+
+        list($reply, $status) = $this->client->grpcClient->TransBegin($request)->wait();
+        if($status->code != 0){
+            throw new SystemException("grpc call failed: ($status->code) $status->details");
+        }
+        return $reply->getId();
+    }
+
+
+    public function prepare($commitAutoPrepare = false){
+        if (count($this->preparingChildren) > 0){
+            $this->serverTransPrepare();
+        }
+
+        if(!$commitAutoPrepare){ //commit里执行的时候，可以省略这步的执行
             $data["action"] = MessageAction::PREPARED;
             $data["status"] = MessageStatus::DELAYED; //保持状态
             $data["available_at"] = null; //暂停超时检测
             $data["id"] = $this->id;
             $this->client->transCommit($data);
         }
+        $this->action = MessageAction::PREPARED;
     }
+
+    private function serverTransPrepare(){
+
+        if(isset($this->client->mocker) &&  $id = $this->client->mocker->matchTransaction($this->topic,MessageAction::PREPARED)){
+            return null;
+        }
+
+        $this->client->initGrpc();
+
+        $request = new TransPrepareRequest();
+        $request->setMessageId($this->id);
+
+        $messages = [];
+        /* @var $child TransChildMessage */
+        foreach ($this->preparingChildren as $child){
+            $messages[] = $child->getPrepareData();
+        }
+        $request->setMessages($messages);
+        list($reply, $status) = $this->client->grpcClient->TransPrepare($request)->wait();
+        if($status->code != 0){
+            throw new SystemException("prepare children faild: ($status->code) $status->details");
+        }
+    }
+
     public function commit($localCommit=true){
 
         if(isset($this->action) && $this->action == MessageAction::PREPARING){
@@ -100,7 +155,7 @@ class TransMessage extends Message
         }
 
         $now = Helpers::getNow();
-        $data["action"] = MessageAction::SUBMITTING;
+        $data["action"] = MessageAction::SUBMITTED;
         $data["status"] = MessageStatus::WAITING;
         $data["available_at"] = Helpers::formartTime($now);
         $data["id"] = $this->id;
@@ -109,8 +164,27 @@ class TransMessage extends Message
         if($localCommit){
             $this->client->localCommit();
         }
+        try {
+            $this->serverTransSubmit();
+        }catch (\Exception $e){
+            $this->client->logError("YiMQ.SERVER_SUBMIT: ". $e->getMessage(),["id"=>$this->id]);
+        }
+
 
         return $data;
+    }
+
+    private function serverTransSubmit(){
+        $this->client->initGrpc();
+
+        $request = new TransActionRequest();
+        $request->setMessageId($this->id);
+
+        list($reply, $status) = $this->client->grpcClient->TransSubmit($request)->wait();
+        if($status->code != 0){
+           throw new SystemException("($status->code) $status->details");
+        }
+        return null;
     }
 
     public function rollback($localRollback=true){
@@ -118,12 +192,31 @@ class TransMessage extends Message
             $this->client->localRollback();
         }
         $now = Helpers::getNow();
-        $data['action'] = MessageAction::CANCELLING;
+        $data['action'] = MessageAction::CANCELED;
         $data["status"] = MessageStatus::WAITING;
         $data["available_at"] = Helpers::formartTime($now);
         $data["id"] = $this->id;
         $this->client->transRollBack($data);
+        try {
+            $this->serverTransCancel();
+        }catch (\Exception $e){
+            $this->client->logError("YiMQ.SERVER_SUBMIT: ". $e->getMessage(),["id"=>$this->id]);
+        }
         return $data;
+    }
+
+    private function serverTransCancel(){
+        $this->client->initGrpc();
+
+
+        $request = new TransActionRequest();
+        $request->setMessageId($this->id);
+
+        list($reply, $status) = $this->client->grpcClient->TransCancel($request)->wait();
+        if($status->code != 0){
+            throw new SystemException("($status->code) $status->details");
+        }
+        return null;
     }
 
     public function tcc(string $processor):TransTcc{

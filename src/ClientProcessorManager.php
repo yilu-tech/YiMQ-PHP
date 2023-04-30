@@ -3,12 +3,17 @@ namespace YiluTech\YiMQ;
 
 
 use YiluTech\YiMQ\Clients\Client;
+use YiluTech\YiMQ\Exceptions\BusinessException;
 use YiluTech\YiMQ\Exceptions\SystemException;
 
 class ClientProcessorManager
 {
     protected Client $client;
     private array $processorsMap;
+
+    protected $dontReport = [
+        BusinessException::class,
+    ];
 
     public function __construct($client)
     {
@@ -27,7 +32,37 @@ class ClientProcessorManager
             throw new SystemException("$processorName processor not found.");
         }
         $processor = new $this->processorsMap[$processorName]($this->client,$processorName);
-        return $processor->process($context);
+
+        try {
+            return $processor->process($context);
+        }catch (\Exception $e){
+            $this->exceptionLogHandler($e);
+            return $this->exceptionReplyHandler($e);
+        }
+
     }
+
+    private function exceptionLogHandler(\Exception $e){
+        foreach ($this->dontReport as $class){
+            if ($e instanceof $class){
+                return;
+            }
+        }
+        $this->client->logError($e);
+    }
+
+    private function exceptionReplyHandler(\Exception $e){
+        $reply["error"] = $e->getMessage();
+
+        if (isset($e->data)){
+            $reply["data"] = $e->data;
+        }
+
+        $reply["stack"] =  sprintf("## %s(%s) \n%s",$e->getFile(),$e->getLine(),$e->getTraceAsString());
+
+        return $reply;
+    }
+
+
 
 }

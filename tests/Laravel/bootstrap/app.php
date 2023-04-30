@@ -36,6 +36,7 @@ $app->singleton(
     YiluTech\YiMQ\Tests\Laravel\App\Console\Kernel::class
 );
 
+
 $app->singleton(
     Illuminate\Contracts\Debug\ExceptionHandler::class,
     YiluTech\YiMQ\Tests\Laravel\App\Exceptions\Handler::class
